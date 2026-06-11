@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Paint Tracker">
+<meta name="theme-color" content="#1A1612">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Paint Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #2C2825; --paper: #242120; --warm-white: #332E2A;
+    --ink: #F0EAE0; --mid: #A89880; --light: #6B5E52;
+    --accent: #C4521A; --accent-light: #3D2518;
+    --green: #3D6B4F; --border: #3E3733;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--cream); color: var(--ink); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+  header { background: var(--ink); color: var(--cream); padding: calc(16px + var(--safe-top)) 20px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+  header h1 { font-family: 'DM Serif Display', serif; font-size: 1.35rem; }
+  header h1 span { color: var(--accent); font-style: italic; }
+  .sync-indicator { font-family: 'DM Mono', monospace; font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; display: flex; align-items: center; gap: 5px; }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--light); flex-shrink: 0; }
+  .sync-dot.syncing { background: #F0A830; animation: pulse 1s infinite; }
+  .sync-dot.synced { background: #5BAD72; }
+  .sync-dot.error { background: #c0392b; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .tab-bar { background: var(--ink); border-top: 1px solid rgba(255,255,255,0.08); display: flex; padding-bottom: var(--safe-bottom); flex-shrink: 0; }
+  .tab-btn { flex: 1; background: none; border: none; color: rgba(255,255,255,0.45); cursor: pointer; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-family: 'DM Mono', monospace; font-size: 0.58rem; letter-spacing: 0.06em; text-transform: uppercase; transition: color 0.15s; }
+  .tab-btn.active { color: var(--accent); }
+  .tab-icon { font-size: 1.1rem; line-height: 1; }
+
+  .app-body { flex: 1; display: flex; overflow: hidden; }
+  @media (min-width: 700px) { .tab-bar { display: none; } .sidebar { display: flex !important; } .main { display: block !important; } }
+
+  .sidebar { width: 220px; min-width: 180px; background: var(--paper); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .sidebar-header { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .sidebar-label { font-family: 'DM Mono', monospace; font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mid); }
+  .room-list { overflow-y: auto; flex: 1; padding: 8px; }
+  .room-item { padding: 10px 12px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; transition: background 0.1s; border: 1px solid transparent; }
+  .room-item:hover { background: var(--cream); }
+  .room-item.active { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+  .room-item.active .room-count { background: var(--accent); color: #fff; }
+  .room-name { font-size: 0.875rem; font-weight: 500; flex: 1; min-width: 0; word-break: break-word; }
+  .room-count { font-family: 'DM Mono', monospace; font-size: 0.65rem; background: var(--border); color: var(--mid); padding: 2px 7px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
+  .room-actions { display: none; gap: 2px; }
+  .room-item:hover .room-actions, .room-item.active .room-actions { display: flex; }
+  .room-edit-btn, .room-del-btn { background: none; border: none; cursor: pointer; padding: 3px 5px; border-radius: 2px; font-size: 0.75rem; line-height: 1; color: inherit; opacity: 0.6; }
+  .room-edit-btn:hover, .room-del-btn:hover { opacity: 1; }
+
+  .main { flex: 1; overflow-y: auto; padding: 20px; background: var(--cream); }
+  @media (max-width: 699px) {
+    .sidebar { width: 100%; border-right: none; }
+    .main { padding: 16px; }
+    .panel { display: none; }
+    .panel.visible { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+    .sidebar.panel.visible { width: 100%; }
+    .main.panel.visible { overflow-y: auto; }
+  }
+
+  /* Loading screen */
+  .loading-screen { position: fixed; inset: 0; background: #1A1612; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 999; transition: opacity 0.4s; }
+  .loading-screen.hidden { opacity: 0; pointer-events: none; }
+  .loading-logo { font-family: 'DM Serif Display', serif; font-size: 2rem; color: #F0EAE0; }
+  .loading-logo span { color: var(--accent); font-style: italic; }
+  .loading-spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  .loading-msg { font-family: 'DM Mono', monospace; font-size: 0.65rem; color: rgba(255,255,255,0.4); letter-spacing: 0.08em; text-transform: uppercase; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60%; gap: 10px; color: var(--mid); text-align: center; padding: 20px; }
+  .empty-icon { font-size: 3rem; }
+  .empty-state h2 { font-family: 'DM Serif Display', serif; font-size: 1.3rem; color: var(--ink); }
+  .empty-state p { font-size: 0.875rem; max-width: 260px; }
+
+  .room-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; gap: 12px; }
+  .room-title { font-family: 'DM Serif Display', serif; font-size: 1.8rem; }
+  .room-subtitle { font-family: 'DM Mono', monospace; font-size: 0.65rem; color: var(--mid); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 3px; }
+  .back-btn { display: none; background: none; border: none; font-size: 1.1rem; cursor: pointer; color: var(--accent); padding: 4px 2px; margin-right: 4px; }
+  @media (max-width: 699px) { .back-btn { display: inline; } }
+
+  .surface-section { margin-bottom: 24px; }
+  .surface-heading { display: flex; align-items: center; margin-bottom: 10px; }
+  .surface-name { font-family: 'DM Mono', monospace; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mid); border-bottom: 2px solid var(--border); padding-bottom: 5px; flex: 1; }
+
+  .paint-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  @media (max-width: 699px) { .paint-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); } }
+  .paint-card { background: #332E2A; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; transition: box-shadow 0.15s, transform 0.15s; }
+  .paint-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-2px); }
+  .paint-swatch { height: 64px; position: relative; }
+  .paint-swatch-inner { width: 100%; height: 100%; }
+  .swatch-actions { position: absolute; top: 5px; right: 5px; display: flex; gap: 3px; opacity: 0; transition: opacity 0.15s; }
+  .paint-card:hover .swatch-actions { opacity: 1; }
+  @media (hover: none) { .swatch-actions { opacity: 1; } }
+  .swatch-btn { background: rgba(255,255,255,0.92); border: none; border-radius: 3px; width: 26px; height: 26px; cursor: pointer; font-size: 0.72rem; display: flex; align-items: center; justify-content: center; }
+  .paint-info { padding: 9px 11px; background: #332E2A; }
+  .paint-colour-name { font-weight: 500; font-size: 0.875rem; margin-bottom: 2px; }
+  .paint-brand { font-family: 'DM Mono', monospace; font-size: 0.62rem; color: var(--mid); text-transform: uppercase; letter-spacing: 0.06em; }
+  .paint-type { display: inline-block; margin-top: 5px; background: var(--paper); color: var(--mid); font-family: 'DM Mono', monospace; font-size: 0.58rem; padding: 2px 7px; border-radius: 20px; }
+  .paint-notes { font-size: 0.72rem; color: var(--mid); margin-top: 5px; }
+  .paint-links { display: flex; gap: 6px; padding: 7px 10px; border-top: 1px solid var(--border); background: #332E2A; }
+  .paint-link { font-family: 'DM Mono', monospace; font-size: 0.58rem; letter-spacing: 0.05em; text-transform: uppercase; text-decoration: none; color: var(--accent); padding: 4px 8px; border: 1px solid var(--accent-light); border-radius: 3px; transition: background 0.1s, color 0.1s; flex: 1; text-align: center; }
+  .paint-link:hover { background: var(--accent); color: #fff; }
+  .paint-link.disabled { color: var(--light); border-color: var(--border); pointer-events: none; }
+
+  .add-paint-card { background: none; border: 1.5px dashed var(--border); border-radius: 6px; min-height: 120px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; color: var(--light); font-family: 'DM Mono', monospace; font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; transition: border-color 0.15s, color 0.15s, background 0.15s; }
+  .add-paint-card:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+  .add-paint-plus { font-size: 1.3rem; line-height: 1; }
+
+  .btn { font-family: 'DM Mono', monospace; font-size: 0.7rem; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; border: none; border-radius: 3px; cursor: pointer; padding: 9px 14px; transition: opacity 0.15s, transform 0.1s; }
+  .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-secondary { background: var(--paper); color: #F0EAE0; border: 1px solid var(--border); }
+  .btn-ghost { background: transparent; color: var(--cream); border: 1px solid rgba(255,255,255,0.3); }
+  .btn-danger { background: #c0392b; color: #fff; }
+  .btn-sm { padding: 5px 10px; font-size: 0.62rem; }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(26,22,18,0.6); z-index: 200; align-items: flex-end; justify-content: center; padding: 0; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: #2C2825; border-radius: 14px 14px 0 0; width: 100%; max-width: 520px; max-height: 92dvh; overflow-y: auto; padding-bottom: var(--safe-bottom); box-shadow: 0 -8px 40px rgba(0,0,0,0.2); animation: slideUp 0.22s ease; }
+  @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @media (min-width: 600px) { .modal-overlay { align-items: center; padding: 16px; } .modal { border-radius: 10px; } }
+  .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 10px auto 0; }
+  @media (min-width: 600px) { .modal-handle { display: none; } }
+  .modal-header { padding: 16px 20px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #242120; }
+  .modal-title { font-family: 'DM Serif Display', serif; font-size: 1.15rem; }
+  .modal-close { background: none; border: none; cursor: pointer; font-size: 1.1rem; color: var(--mid); padding: 4px; }
+  .modal-body { padding: 16px 20px; background: #2C2825; }
+  .modal-footer { padding: 10px 20px 16px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border); background: #2C2825; }
+
+  .field { margin-bottom: 14px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  label { display: block; font-family: 'DM Mono', monospace; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mid); margin-bottom: 5px; }
+  input[type=text], input[type=url], input[type=color], select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; background: #1E1B18; font-family: 'DM Sans', sans-serif; font-size: 0.9rem; color: #F0EAE0; outline: none; transition: border-color 0.15s; -webkit-appearance: none; }
+  input:focus, select:focus { border-color: var(--ink); }
+  input[type=color] { height: 44px; padding: 4px 6px; cursor: pointer; }
+  .color-row { display: flex; gap: 10px; align-items: flex-end; }
+  .color-row .field { flex: 1; margin-bottom: 0; }
+  .color-preview { width: 44px; height: 44px; border-radius: 4px; border: 1px solid var(--border); flex-shrink: 0; transition: background 0.2s; }
+
+  .lookup-status { font-size: 0.75rem; color: var(--mid); margin-top: 6px; min-height: 18px; display: flex; align-items: center; gap: 6px; }
+  .lookup-status.found { color: var(--green); }
+  .lookup-status.error { color: #c0392b; }
+  .lookup-status.searching { color: var(--accent); }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+
+  .suggest-wrap { position: relative; }
+  .suggest-list { position: absolute; top: 100%; left: 0; right: 0; background: #2C2825; border: 1px solid var(--border); border-top: none; border-radius: 0 0 4px 4px; max-height: 180px; overflow-y: auto; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .suggest-item { padding: 9px 12px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 0.875rem; transition: background 0.1s; }
+  .suggest-item:hover { background: var(--paper); }
+  .suggest-swatch { width: 20px; height: 20px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.1); flex-shrink: 0; }
+  .suggest-name { flex: 1; }
+  .suggest-code { font-family: 'DM Mono', monospace; font-size: 0.62rem; color: var(--mid); }
+
+  .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .tag { display: flex; align-items: center; gap: 4px; background: var(--paper); border: 1px solid var(--border); border-radius: 3px; padding: 4px 9px; font-family: 'DM Mono', monospace; font-size: 0.7rem; }
+  .tag-del { background: none; border: none; cursor: pointer; color: var(--mid); font-size: 0.8rem; padding: 0; line-height: 1; }
+  .tag-hint { font-size: 0.68rem; color: var(--mid); margin-top: 6px; }
+  .tag-input-row { display: flex; gap: 8px; }
+  .tag-input-row input { flex: 1; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+  .install-banner { display: none; background: var(--green); color: #fff; padding: 10px 16px; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.8rem; flex-shrink: 0; }
+  .install-banner.show { display: flex; }
+  .install-banner button { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: #fff; border-radius: 3px; padding: 5px 12px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+  .install-dismiss { background: none !important; border: none !important; opacity: 0.6; font-size: 1rem !important; padding: 0 4px !important; }
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-logo">Paint <span>Tracker</span></div>
+  <div class="loading-spinner"></div>
+  <div class="loading-msg" id="loadingMsg">Loading your data…</div>
+</div>
+
+<header>
+  <h1>Paint <span>Tracker</span></h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="sync-indicator" id="syncIndicator">
+      <div class="sync-dot synced" id="syncDot"></div>
+      <span id="syncLabel">Saved</span>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="openRoomModal()">+ Room</button>
+  </div>
+</header>
+
+<div class="install-banner" id="installBanner">
+  <span>📲 Add to Home Screen for the best experience</span>
+  <button onclick="doInstall()">Install</button>
+  <button class="install-dismiss" onclick="dismissInstall()">✕</button>
+</div>
+
+<div class="app-body">
+  <aside class="sidebar panel" id="sidebarPanel">
+    <div class="sidebar-header"><span class="sidebar-label">Rooms</span></div>
+    <div class="room-list" id="roomList"></div>
+    <div style="padding:12px"><button class="btn btn-primary" style="width:100%" onclick="openRoomModal()">+ Add Room</button></div>
+  </aside>
+  <main class="main panel" id="mainPanel">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">🎨</div>
+      <h2>No room selected</h2>
+      <p>Add a room to start tracking your paints.</p>
+      <button class="btn btn-primary" style="margin-top:8px" onclick="openRoomModal()">Add first room</button>
+    </div>
+    <div id="roomView" style="display:none"></div>
+  </main>
+</div>
+
+<nav class="tab-bar">
+  <button class="tab-btn active" id="tabRooms" onclick="showTab('rooms')"><span class="tab-icon">🏠</span>Rooms</button>
+  <button class="tab-btn" id="tabDetail" onclick="showTab('detail')"><span class="tab-icon">🎨</span>Paints</button>
+</nav>
+
+<!-- Room Modal -->
+<div class="modal-overlay" id="roomModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="roomModalTitle">New Room</span>
+      <button class="modal-close" onclick="closeModal('roomModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Room Name</label>
+        <input type="text" id="roomNameInput" placeholder="e.g. Living Room, Master Bedroom…">
+      </div>
+      <div class="field">
+        <label>Surfaces</label>
+        <div class="tag-list" id="surfaceTagList"></div>
+        <div class="tag-input-row">
+          <input type="text" id="surfaceTagInput" placeholder="e.g. Wall, Ceiling, Door…" onkeydown="surfaceTagKeydown(event)">
+          <button class="btn btn-secondary btn-sm" onclick="addSurfaceTag()">Add</button>
+        </div>
+        <p class="tag-hint">Suggestions: Wall · Ceiling · Door · Wardrobe · Wood Panel · Skirting</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('roomModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRoom()">Save Room</button>
+    </div>
+  </div>
+</div>
+
+<!-- Paint Modal -->
+<div class="modal-overlay" id="paintModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="paintModalTitle">Add Paint</span>
+      <button class="modal-close" onclick="closeModal('paintModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Brand</label>
+        <select id="paintBrand" onchange="onBrandChange()">
+          <option value="">Select brand…</option>
+          <option value="Farrow & Ball">Farrow &amp; Ball</option>
+          <option value="Dulux">Dulux</option>
+          <option value="Crown">Crown</option>
+          <option value="Little Greene">Little Greene</option>
+          <option value="Fired Earth">Fired Earth</option>
+          <option value="Annie Sloan">Annie Sloan</option>
+          <option value="other">Other…</option>
+        </select>
+      </div>
+      <div class="field" id="brandOtherField" style="display:none">
+        <label>Brand Name</label>
+        <input type="text" id="paintBrandOther" placeholder="Enter brand name">
+      </div>
+      <div class="field">
+        <label>Colour Name</label>
+        <div class="suggest-wrap">
+          <input type="text" id="paintColour" placeholder="Start typing a colour name…" autocomplete="off"
+            oninput="onColourInput()" onkeydown="onColourKeydown(event)" onblur="hideSuggestionsDelayed()">
+          <div class="suggest-list" id="suggestList" style="display:none"></div>
+        </div>
+      </div>
+      <div class="lookup-status" id="lookupStatus"></div>
+      <div class="field" style="margin-top:10px">
+        <label>Type / Finish</label>
+        <select id="paintType" onchange="onTypeChange()">
+          <option value="">Select finish…</option>
+        </select>
+        <div class="field" id="typeOtherField" style="display:none;margin-top:8px">
+          <input type="text" id="paintTypeOther" placeholder="Enter finish type">
+        </div>
+      </div>
+      <div class="field">
+        <label>Colour Sample</label>
+        <div class="color-row">
+          <div class="field"><input type="color" id="paintColorPicker" value="#F5F0E8" oninput="updateColorPreview(this.value)"></div>
+          <div class="color-preview" id="colorPreview" style="background:#F5F0E8"></div>
+          <div class="field" style="flex:2"><input type="text" id="paintColorHex" placeholder="#F5F0E8" oninput="syncColorHex(this.value)" style="font-family:'DM Mono',monospace;font-size:0.85rem"></div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Colour / Product Page URL</label>
+        <input type="url" id="paintColourUrl" placeholder="https://…">
+      </div>
+      <div class="field">
+        <label>Buy / Price Check URL</label>
+        <input type="url" id="paintBuyUrl" placeholder="https://…">
+      </div>
+      <div class="field">
+        <label>Notes <span style="font-size:0.65rem;text-transform:none;letter-spacing:0">(optional)</span></label>
+        <input type="text" id="paintNotes" placeholder="e.g. Two coats, used 2.5L">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('paintModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePaint()">Save Paint</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">Confirm Delete</span>
+      <button class="modal-close" onclick="closeModal('confirmModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirmText" style="font-size:0.9rem;line-height:1.6;color:var(--mid)"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn btn-danger" id="confirmBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// SUPABASE CONFIG
+// ═══════════════════════════════════════════
+const SUPABASE_URL = 'https://rsvcqtfgidhrumtopiqb.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzdmNxdGZnaWRocnVtdG9waXFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMjc2MDIsImV4cCI6MjA5MjkwMzYwMn0.jUomRZbvTNPhsdgNalEni1TjwpyRMZ5m07G4dlD0uNY';
+const TABLE = 'paint_tracker';
+const ROW_ID = 'rooms';
+
+async function dbLoad() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${ROW_ID}&select=data`, {
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+  });
+  const rows = await res.json();
+  return (rows && rows[0]) ? rows[0].data : { rooms: [] };
+}
+
+async function dbSave(data) {
+  setSyncState('syncing');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${ROW_ID}`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ data, updated_at: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error('Save failed');
+    // Also cache locally as backup
+    localStorage.setItem('paintTrackerCache', JSON.stringify(data));
+    setSyncState('synced');
+  } catch(e) {
+    setSyncState('error');
+    // Still save locally
+    localStorage.setItem('paintTrackerCache', JSON.stringify(data));
+  }
+}
+
+function setSyncState(state) {
+  const dot = document.getElementById('syncDot');
+  const label = document.getElementById('syncLabel');
+  dot.className = 'sync-dot ' + state;
+  label.textContent = state === 'syncing' ? 'Saving…' : state === 'synced' ? 'Saved' : 'Offline';
+}
+
+// ═══════════════════════════════════════════
+// FARROW & BALL DATABASE
+// ═══════════════════════════════════════════
+const FB_COLOURS = [
+  {name:"All White",code:"No.2005",hex:"#F4EFE4",url:"https://www.farrow-ball.com/en-gb/paint-colours/all-white"},
+  {name:"Wimborne White",code:"No.239",hex:"#F0EAD6",url:"https://www.farrow-ball.com/en-gb/paint-colours/wimborne-white"},
+  {name:"New White",code:"No.59",hex:"#EDE5CE",url:"https://www.farrow-ball.com/en-gb/paint-colours/new-white"},
+  {name:"Pointing",code:"No.2003",hex:"#EDE3CC",url:"https://www.farrow-ball.com/en-gb/paint-colours/pointing"},
+  {name:"White Tie",code:"No.2002",hex:"#EAE0C8",url:"https://www.farrow-ball.com/en-gb/paint-colours/white-tie"},
+  {name:"String",code:"No.8",hex:"#D9CEAE",url:"https://www.farrow-ball.com/en-gb/paint-colours/string"},
+  {name:"Matchstick",code:"No.2013",hex:"#DDD3B0",url:"https://www.farrow-ball.com/en-gb/paint-colours/matchstick"},
+  {name:"Lime White",code:"No.1",hex:"#EDE8D5",url:"https://www.farrow-ball.com/en-gb/paint-colours/lime-white"},
+  {name:"Slipper Satin",code:"No.2004",hex:"#E8DCCA",url:"https://www.farrow-ball.com/en-gb/paint-colours/slipper-satin"},
+  {name:"Cream",code:"No.67",hex:"#E5D9BC",url:"https://www.farrow-ball.com/en-gb/paint-colours/cream"},
+  {name:"Off-White",code:"No.3",hex:"#EDE4CB",url:"https://www.farrow-ball.com/en-gb/paint-colours/off-white"},
+  {name:"House White",code:"No.2012",hex:"#E8DFCA",url:"https://www.farrow-ball.com/en-gb/paint-colours/house-white"},
+  {name:"Clunch",code:"No.2009",hex:"#DDD3B8",url:"https://www.farrow-ball.com/en-gb/paint-colours/clunch"},
+  {name:"Elephant's Breath",code:"No.229",hex:"#C2BAA6",url:"https://www.farrow-ball.com/en-gb/paint-colours/elephants-breath"},
+  {name:"Mole's Breath",code:"No.276",hex:"#8E8880",url:"https://www.farrow-ball.com/en-gb/paint-colours/moles-breath"},
+  {name:"Hardwick White",code:"No.5",hex:"#D4CCBA",url:"https://www.farrow-ball.com/en-gb/paint-colours/hardwick-white"},
+  {name:"Pavilion Gray",code:"No.242",hex:"#B5B0A4",url:"https://www.farrow-ball.com/en-gb/paint-colours/pavilion-gray"},
+  {name:"Purbeck Stone",code:"No.275",hex:"#BCBCB0",url:"https://www.farrow-ball.com/en-gb/paint-colours/purbeck-stone"},
+  {name:"Dimpse",code:"No.277",hex:"#A8A49C",url:"https://www.farrow-ball.com/en-gb/paint-colours/dimpse"},
+  {name:"Lamp Room Gray",code:"No.88",hex:"#A8A99E",url:"https://www.farrow-ball.com/en-gb/paint-colours/lamp-room-gray"},
+  {name:"Strong White",code:"No.2001",hex:"#DDD9CE",url:"https://www.farrow-ball.com/en-gb/paint-colours/strong-white"},
+  {name:"Cabbage White",code:"No.269",hex:"#C8D4D0",url:"https://www.farrow-ball.com/en-gb/paint-colours/cabbage-white"},
+  {name:"Pale Powder",code:"No.204",hex:"#C8D4D0",url:"https://www.farrow-ball.com/en-gb/paint-colours/pale-powder"},
+  {name:"Light Blue",code:"No.22",hex:"#A8C0C0",url:"https://www.farrow-ball.com/en-gb/paint-colours/light-blue"},
+  {name:"Borrowed Light",code:"No.235",hex:"#C0D0D0",url:"https://www.farrow-ball.com/en-gb/paint-colours/borrowed-light"},
+  {name:"Blue Ground",code:"No.210",hex:"#7FA0A8",url:"https://www.farrow-ball.com/en-gb/paint-colours/blue-ground"},
+  {name:"Lulworth Blue",code:"No.89",hex:"#7898A8",url:"https://www.farrow-ball.com/en-gb/paint-colours/lulworth-blue"},
+  {name:"Parma Gray",code:"No.27",hex:"#A0B4BC",url:"https://www.farrow-ball.com/en-gb/paint-colours/parma-gray"},
+  {name:"Skylight",code:"No.205",hex:"#B0C4C8",url:"https://www.farrow-ball.com/en-gb/paint-colours/skylight"},
+  {name:"Stone Blue",code:"No.86",hex:"#6888A0",url:"https://www.farrow-ball.com/en-gb/paint-colours/stone-blue"},
+  {name:"Oval Room Blue",code:"No.85",hex:"#7890A0",url:"https://www.farrow-ball.com/en-gb/paint-colours/oval-room-blue"},
+  {name:"Hague Blue",code:"No.30",hex:"#2C4458",url:"https://www.farrow-ball.com/en-gb/paint-colours/hague-blue"},
+  {name:"Stiffkey Blue",code:"No.281",hex:"#3A5068",url:"https://www.farrow-ball.com/en-gb/paint-colours/stiffkey-blue"},
+  {name:"Inchyra Blue",code:"No.289",hex:"#4A6070",url:"https://www.farrow-ball.com/en-gb/paint-colours/inchyra-blue"},
+  {name:"De Nimes",code:"No.299",hex:"#7898A8",url:"https://www.farrow-ball.com/en-gb/paint-colours/de-nimes"},
+  {name:"Pitch Blue",code:"No.220",hex:"#2A4050",url:"https://www.farrow-ball.com/en-gb/paint-colours/pitch-blue"},
+  {name:"Breakfast Room Green",code:"No.81",hex:"#9AAA88",url:"https://www.farrow-ball.com/en-gb/paint-colours/breakfast-room-green"},
+  {name:"Pale Lichen",code:"No.19",hex:"#A8B098",url:"https://www.farrow-ball.com/en-gb/paint-colours/pale-lichen"},
+  {name:"Mizzle",code:"No.266",hex:"#9EA090",url:"https://www.farrow-ball.com/en-gb/paint-colours/mizzle"},
+  {name:"Card Room Green",code:"No.79",hex:"#8A9878",url:"https://www.farrow-ball.com/en-gb/paint-colours/card-room-green"},
+  {name:"Chappell Green",code:"No.83",hex:"#829070",url:"https://www.farrow-ball.com/en-gb/paint-colours/chappell-green"},
+  {name:"Calke Green",code:"No.80",hex:"#708060",url:"https://www.farrow-ball.com/en-gb/paint-colours/calke-green"},
+  {name:"Green Smoke",code:"No.47",hex:"#788870",url:"https://www.farrow-ball.com/en-gb/paint-colours/green-smoke"},
+  {name:"Malachite",code:"No.45",hex:"#407860",url:"https://www.farrow-ball.com/en-gb/paint-colours/malachite"},
+  {name:"Yeabridge Green",code:"No.287",hex:"#687858",url:"https://www.farrow-ball.com/en-gb/paint-colours/yeabridge-green"},
+  {name:"Cromarty",code:"No.285",hex:"#98A890",url:"https://www.farrow-ball.com/en-gb/paint-colours/cromarty"},
+  {name:"Bone",code:"No.15",hex:"#D8C8A8",url:"https://www.farrow-ball.com/en-gb/paint-colours/bone"},
+  {name:"Oxford Stone",code:"No.246",hex:"#C8B890",url:"https://www.farrow-ball.com/en-gb/paint-colours/oxford-stone"},
+  {name:"Joa's White",code:"No.226",hex:"#D8D0B8",url:"https://www.farrow-ball.com/en-gb/paint-colours/joas-white"},
+  {name:"Savage Ground",code:"No.213",hex:"#C0A880",url:"https://www.farrow-ball.com/en-gb/paint-colours/savage-ground"},
+  {name:"Dead Salmon",code:"No.28",hex:"#C8A890",url:"https://www.farrow-ball.com/en-gb/paint-colours/dead-salmon"},
+  {name:"Pink Ground",code:"No.202",hex:"#DCC8B8",url:"https://www.farrow-ball.com/en-gb/paint-colours/pink-ground"},
+  {name:"Setting Plaster",code:"No.231",hex:"#D8B8A8",url:"https://www.farrow-ball.com/en-gb/paint-colours/setting-plaster"},
+  {name:"Calamine",code:"No.230",hex:"#E0C0B0",url:"https://www.farrow-ball.com/en-gb/paint-colours/calamine"},
+  {name:"Dorset Cream",code:"No.68",hex:"#E0D0A8",url:"https://www.farrow-ball.com/en-gb/paint-colours/dorset-cream"},
+  {name:"Charlotte's Locks",code:"No.268",hex:"#C86030",url:"https://www.farrow-ball.com/en-gb/paint-colours/charlottes-locks"},
+  {name:"Incarnadine",code:"No.248",hex:"#A03028",url:"https://www.farrow-ball.com/en-gb/paint-colours/incarnadine"},
+  {name:"Rectory Red",code:"No.217",hex:"#883030",url:"https://www.farrow-ball.com/en-gb/paint-colours/rectory-red"},
+  {name:"Eating Room Red",code:"No.43",hex:"#882828",url:"https://www.farrow-ball.com/en-gb/paint-colours/eating-room-red"},
+  {name:"Radicchio",code:"No.96",hex:"#703038",url:"https://www.farrow-ball.com/en-gb/paint-colours/radicchio"},
+  {name:"Brinjal",code:"No.222",hex:"#583040",url:"https://www.farrow-ball.com/en-gb/paint-colours/brinjal"},
+  {name:"Pelt",code:"No.254",hex:"#503048",url:"https://www.farrow-ball.com/en-gb/paint-colours/pelt"},
+  {name:"Brassica",code:"No.271",hex:"#6A4858",url:"https://www.farrow-ball.com/en-gb/paint-colours/brassica"},
+  {name:"Mahogany",code:"No.36",hex:"#603828",url:"https://www.farrow-ball.com/en-gb/paint-colours/mahogany"},
+  {name:"London Clay",code:"No.244",hex:"#906848",url:"https://www.farrow-ball.com/en-gb/paint-colours/london-clay"},
+  {name:"Mouse's Back",code:"No.40",hex:"#907860",url:"https://www.farrow-ball.com/en-gb/paint-colours/mouses-back"},
+  {name:"Smoked Trout",code:"No.60",hex:"#B89880",url:"https://www.farrow-ball.com/en-gb/paint-colours/smoked-trout"},
+  {name:"Shaded White",code:"No.201",hex:"#D8D0B8",url:"https://www.farrow-ball.com/en-gb/paint-colours/shaded-white"},
+  {name:"Down Pipe",code:"No.26",hex:"#585858",url:"https://www.farrow-ball.com/en-gb/paint-colours/down-pipe"},
+  {name:"Railings",code:"No.31",hex:"#3A3C3C",url:"https://www.farrow-ball.com/en-gb/paint-colours/railings"},
+  {name:"Pitch Black",code:"No.256",hex:"#282828",url:"https://www.farrow-ball.com/en-gb/paint-colours/pitch-black"},
+  {name:"Off-Black",code:"No.57",hex:"#383430",url:"https://www.farrow-ball.com/en-gb/paint-colours/off-black"},
+  {name:"Ammonite",code:"No.274",hex:"#C0B8A8",url:"https://www.farrow-ball.com/en-gb/paint-colours/ammonite"},
+  {name:"Blackened",code:"No.2011",hex:"#C8C8C0",url:"https://www.farrow-ball.com/en-gb/paint-colours/blackened"},
+  {name:"Cornforth White",code:"No.228",hex:"#C8C4B8",url:"https://www.farrow-ball.com/en-gb/paint-colours/cornforth-white"},
+  {name:"Worsted",code:"No.284",hex:"#A0988A",url:"https://www.farrow-ball.com/en-gb/paint-colours/worsted"},
+  {name:"Charleston Gray",code:"No.243",hex:"#989088",url:"https://www.farrow-ball.com/en-gb/paint-colours/charleston-gray"},
+  {name:"French Gray",code:"No.18",hex:"#A8A898",url:"https://www.farrow-ball.com/en-gb/paint-colours/french-gray"},
+  {name:"Manor House Gray",code:"No.265",hex:"#888880",url:"https://www.farrow-ball.com/en-gb/paint-colours/manor-house-gray"},
+  {name:"Plummett",code:"No.272",hex:"#787870",url:"https://www.farrow-ball.com/en-gb/paint-colours/plummett"},
+];
+
+
+function fbBuyUrl(u) { return u ? u.replace('/paint-colours/','/shop/paint/') : ''; }
+
+// ═══════════════════════════════════════════
+// BRAND FINISHES DATABASE
+// ═══════════════════════════════════════════
+const BRAND_FINISHES = {
+  'Farrow & Ball': [
+    'Estate Emulsion',
+    'Modern Emulsion',
+    'Estate Eggshell',
+    'Modern Eggshell',
+    'Full Gloss',
+    'Exterior Eggshell',
+    'Exterior Masonry',
+    'Primer & Undercoat',
+    'Dead Flat',
+    'Other…'
+  ],
+  'Dulux': [
+    'Matt Emulsion',
+    'Silk Emulsion',
+    'Satinwood',
+    'Gloss',
+    'Eggshell',
+    'Weathershield',
+    'Quick Dry Satinwood',
+    'Quick Dry Gloss',
+    'Other…'
+  ],
+  'Crown': [
+    'Matt Emulsion',
+    'Silk Emulsion',
+    'Satinwood',
+    'Gloss',
+    'Eggshell',
+    'Breatheasy Matt',
+    'Breatheasy Silk',
+    'Other…'
+  ],
+  'Little Greene': [
+    'Intelligent Matt Emulsion',
+    'Intelligent Eggshell',
+    'Intelligent Gloss',
+    'Absolute Matt Emulsion',
+    'Oil Eggshell',
+    'Oil Gloss',
+    'Exterior Eggshell',
+    'Other…'
+  ],
+  'Fired Earth': [
+    'Matt Emulsion',
+    'Eggshell',
+    'Gloss',
+    'Exterior Masonry',
+    'Other…'
+  ],
+  'Annie Sloan': [
+    'Chalk Paint',
+    'Satin Paint',
+    'Wall Paint',
+    'Other…'
+  ],
+  '_default': [
+    'Matt Emulsion',
+    'Silk Emulsion',
+    'Eggshell',
+    'Satinwood',
+    'Gloss',
+    'Exterior Emulsion',
+    'Exterior Gloss',
+    'Primer / Undercoat',
+    'Other…'
+  ]
+};
+
+function populateTypeOptions(brand, currentVal) {
+  const sel = document.getElementById('paintType');
+  const finishes = BRAND_FINISHES[brand] || BRAND_FINISHES['_default'];
+  sel.innerHTML = '<option value="">Select finish…</option>' +
+    finishes.map(f => `<option value="${f}"${currentVal===f?' selected':''}>${f}</option>`).join('');
+  // If currentVal is set but not in list, select Other and show custom field
+  const inList = finishes.includes(currentVal);
+  if (currentVal && !inList) {
+    sel.value = 'Other…';
+    document.getElementById('typeOtherField').style.display = 'block';
+    document.getElementById('paintTypeOther').value = currentVal;
+  } else {
+    document.getElementById('typeOtherField').style.display = sel.value === 'Other…' ? 'block' : 'none';
+  }
+}
+
+function onTypeChange() {
+  const val = document.getElementById('paintType').value;
+  document.getElementById('typeOtherField').style.display = val === 'Other…' ? 'block' : 'none';
+  if (val === 'Other…') setTimeout(() => document.getElementById('paintTypeOther').focus(), 50);
+}
+
+function getType() {
+  const val = document.getElementById('paintType').value;
+  if (val === 'Other…') return document.getElementById('paintTypeOther').value.trim();
+  return val;
+}
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let data = { rooms: [] };
+let selectedRoomId = null;
+let editingRoomId = null;
+let editingPaintId = null;
+let paintContext = null;
+let tempSurfaces = [];
+let deferredInstall = null;
+let lookupTimer = null;
+let suggestHighlight = -1;
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function isMobile() { return window.innerWidth < 700; }
+
+async function save() {
+  await dbSave(data);
+}
+
+// ═══════════════════════════════════════════
+// INIT — load from Supabase
+// ═══════════════════════════════════════════
+async function init() {
+  try {
+    document.getElementById('loadingMsg').textContent = 'Connecting to database…';
+    data = await dbLoad();
+    document.getElementById('loadingMsg').textContent = 'Loading rooms…';
+    if(data.rooms) data.rooms.sort((a,b)=>a.name.localeCompare(b.name,'en',{numeric:true,sensitivity:'base'}));
+    setSyncState('synced');
+  } catch(e) {
+    document.getElementById('loadingMsg').textContent = 'Error: ' + e.message;
+    // Fall back to local cache
+    const cached = localStorage.getItem('paintTrackerCache');
+    if (cached) {
+      data = JSON.parse(cached);
+      document.getElementById('loadingMsg').textContent = 'Loaded from local cache';
+    } else {
+      document.getElementById('loadingMsg').textContent = 'No data found — ' + e.message;
+    }
+    setSyncState('error');
+    await new Promise(r => setTimeout(r, 2000)); // show error for 2s
+  }
+  document.getElementById('loadingScreen').classList.add('hidden');
+  initPanels(); renderSidebar(); renderRoom();
+}
+
+// ═══════════════════════════════════════════
+// COLOUR LOOKUP
+// ═══════════════════════════════════════════
+function getBrand() {
+  const sel = document.getElementById('paintBrand').value;
+  if (sel === 'other') return document.getElementById('paintBrandOther').value.trim();
+  return sel;
+}
+function onBrandChange() {
+  const sel = document.getElementById('paintBrand').value;
+  document.getElementById('brandOtherField').style.display = sel === 'other' ? 'block' : 'none';
+  document.getElementById('paintColour').value = '';
+  populateTypeOptions(getBrand(), '');
+  hideSuggestions(); setLookupStatus('','');
+}
+function onColourInput() {
+  const val = document.getElementById('paintColour').value.trim();
+  const brand = getBrand();
+  hideSuggestions(); clearTimeout(lookupTimer);
+  if (!val) { setLookupStatus('',''); return; }
+  if (brand === 'Farrow & Ball') {
+    const matches = FB_COLOURS.filter(c => c.name.toLowerCase().includes(val.toLowerCase()) || c.code.toLowerCase().includes(val.toLowerCase())).slice(0,8);
+    if (matches.length) { showSuggestions(matches); return; }
+  }
+  setLookupStatus('searching','');
+  lookupTimer = setTimeout(() => doAILookup(brand, val), 800);
+}
+function onColourKeydown(e) {
+  const list = document.getElementById('suggestList');
+  if (list.style.display === 'none') return;
+  const items = list.querySelectorAll('.suggest-item');
+  if (e.key==='ArrowDown'){e.preventDefault();suggestHighlight=Math.min(suggestHighlight+1,items.length-1);highlightSuggest(items);}
+  else if(e.key==='ArrowUp'){e.preventDefault();suggestHighlight=Math.max(suggestHighlight-1,0);highlightSuggest(items);}
+  else if(e.key==='Enter'&&suggestHighlight>=0){e.preventDefault();items[suggestHighlight].click();}
+  else if(e.key==='Escape'){hideSuggestions();}
+}
+function highlightSuggest(items){items.forEach((it,i)=>it.style.background=i===suggestHighlight?'var(--paper)':'');}
+function showSuggestions(colours) {
+  const list = document.getElementById('suggestList');
+  list.innerHTML = colours.map(c=>`<div class="suggest-item" onclick="selectSuggestion('${c.name.replace(/'/g,"\\'")}','${c.hex}','${c.url}','${fbBuyUrl(c.url)}')"><div class="suggest-swatch" style="background:${c.hex}"></div><span class="suggest-name">${c.name}</span><span class="suggest-code">${c.code}</span></div>`).join('');
+  list.style.display='block'; suggestHighlight=-1; setLookupStatus('','');
+}
+function hideSuggestions(){document.getElementById('suggestList').style.display='none';suggestHighlight=-1;}
+function hideSuggestionsDelayed(){setTimeout(hideSuggestions,200);}
+function selectSuggestion(name,hex,colourUrl,buyUrl){
+  document.getElementById('paintColour').value=name;
+  applyColour(hex,colourUrl,buyUrl);
+  hideSuggestions();
+  setLookupStatus('found','✓ Matched from Farrow & Ball database');
+}
+function applyColour(hex,colourUrl,buyUrl){
+  if(hex){document.getElementById('paintColorPicker').value=hex;document.getElementById('paintColorHex').value=hex;document.getElementById('colorPreview').style.background=hex;}
+  if(colourUrl)document.getElementById('paintColourUrl').value=colourUrl;
+  if(buyUrl)document.getElementById('paintBuyUrl').value=buyUrl;
+}
+function setLookupStatus(type,msg){
+  const el=document.getElementById('lookupStatus');
+  el.className='lookup-status'+(type?' '+type:'');
+  if(type==='searching'){el.innerHTML='<span class="spinner"></span> Looking up colour…';}
+  else{el.textContent=msg;}
+}
+async function doAILookup(brand,colour){
+  if(!brand||!colour){setLookupStatus('','');return;}
+  setLookupStatus('searching','');
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',max_tokens:300,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:[{role:'user',content:`Paint colour lookup: "${colour}" by "${brand}". Return ONLY JSON, no markdown:\n{"hex":"#RRGGBB","colourUrl":"official page or empty","buyUrl":"buy page or empty","found":true/false}`}]
+      })
+    });
+    const d=await res.json();
+    const text=(d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+    const match=text.replace(/```json|```/g,'').trim().match(/\{[\s\S]*\}/);
+    if(!match)throw new Error();
+    const result=JSON.parse(match[0]);
+    if(result.found&&result.hex){applyColour(result.hex,result.colourUrl,result.buyUrl);setLookupStatus('found','✓ Colour data found');}
+    else{setLookupStatus('error','Colour not found — fill in manually');}
+  }catch(e){setLookupStatus('error','Lookup failed — fill in manually');}
+}
+
+// ═══════════════════════════════════════════
+// PWA
+// ═══════════════════════════════════════════
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(!localStorage.getItem('installDismissed'))document.getElementById('installBanner').classList.add('show');});
+function doInstall(){if(!deferredInstall)return;deferredInstall.prompt();deferredInstall.userChoice.then(()=>{deferredInstall=null;document.getElementById('installBanner').classList.remove('show');});}
+function dismissInstall(){localStorage.setItem('installDismissed','1');document.getElementById('installBanner').classList.remove('show');}
+
+// ═══════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════
+function showTab(tab){
+  if(!isMobile())return;
+  const sidebar=document.getElementById('sidebarPanel'),main=document.getElementById('mainPanel');
+  if(tab==='rooms'){sidebar.classList.add('visible');main.classList.remove('visible');document.getElementById('tabRooms').classList.add('active');document.getElementById('tabDetail').classList.remove('active');}
+  else{main.classList.add('visible');sidebar.classList.remove('visible');document.getElementById('tabRooms').classList.remove('active');document.getElementById('tabDetail').classList.add('active');}
+}
+function initPanels(){
+  if(isMobile()){document.getElementById('sidebarPanel').classList.add('visible');document.getElementById('mainPanel').classList.remove('visible');}
+  else{document.getElementById('sidebarPanel').classList.remove('visible');document.getElementById('mainPanel').classList.remove('visible');}
+}
+
+// ═══════════════════════════════════════════
+// SIDEBAR
+// ═══════════════════════════════════════════
+function renderSidebar(){
+  const list=document.getElementById('roomList');list.innerHTML='';
+  if(!data.rooms.length){list.innerHTML='<p style="padding:16px 12px;font-size:0.8rem;color:var(--light);text-align:center">No rooms yet</p>';return;}
+  const sortedRooms = [...data.rooms].sort((a,b)=>a.name.localeCompare(b.name,'en',{numeric:true,sensitivity:'base'}));
+  sortedRooms.forEach(room=>{
+    const paintCount=Object.values(room.surfaces||{}).flat().length;
+    const el=document.createElement('div');
+    el.className='room-item'+(room.id===selectedRoomId?' active':'');
+    el.innerHTML=`<span class="room-name">${room.name}</span><span class="room-count">${paintCount}</span><span class="room-actions"><button class="room-edit-btn" onclick="event.stopPropagation();openRoomModal('${room.id}')">✎</button><button class="room-del-btn" onclick="event.stopPropagation();confirmDeleteRoom('${room.id}')">✕</button></span>`;
+    el.addEventListener('click',()=>selectRoom(room.id));
+    list.appendChild(el);
+  });
+}
+function selectRoom(id){selectedRoomId=id;renderSidebar();renderRoom();if(isMobile())showTab('detail');}
+
+// ═══════════════════════════════════════════
+// ROOM VIEW
+// ═══════════════════════════════════════════
+function renderRoom(){
+  const empty=document.getElementById('emptyState'),view=document.getElementById('roomView');
+  const room=data.rooms.find(r=>r.id===selectedRoomId);
+  if(!room){empty.style.display='flex';view.style.display='none';return;}
+  empty.style.display='none';view.style.display='block';
+  const surfaces=Object.keys(room.surfaces||{}).sort((a,b)=>a.localeCompare(b,'en',{numeric:true,sensitivity:'base'}));
+  const total=Object.values(room.surfaces||{}).flat().length;
+  let html=`<div class="room-header"><div><div style="display:flex;align-items:center;gap:4px"><button class="back-btn" onclick="showTab('rooms')">‹</button><div class="room-title">${room.name}</div></div><div class="room-subtitle">${surfaces.length} surface${surfaces.length!==1?'s':''} · ${total} paint record${total!==1?'s':''}</div></div><button class="btn btn-secondary btn-sm" onclick="openRoomModal('${room.id}')">Edit Room</button></div>`;
+  if(!surfaces.length)html+=`<p style="color:var(--mid);font-size:0.875rem;padding:8px 0">No surfaces yet — tap Edit Room.</p>`;
+  surfaces.forEach(surface=>{
+    const paints=room.surfaces[surface]||[];
+    html+=`<div class="surface-section"><div class="surface-heading"><div class="surface-name">${surface}</div></div><div class="paint-grid">${paints.map(p=>paintCardHtml(p,room.id,surface)).join('')}<button class="add-paint-card" onclick="openPaintModal('${room.id}','${esc(surface)}')"><span class="add-paint-plus">+</span><span>Add paint</span></button></div></div>`;
+  });
+  view.innerHTML=html;
+}
+function esc(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+function paintCardHtml(p,roomId,surface){
+  const cLink=p.colourUrl?`<a href="${p.colourUrl}" target="_blank" class="paint-link">🎨 Colour</a>`:`<span class="paint-link disabled">🎨 Colour</span>`;
+  const bLink=p.buyUrl?`<a href="${p.buyUrl}" target="_blank" class="paint-link">🛒 Buy</a>`:`<span class="paint-link disabled">🛒 Buy</span>`;
+  return `<div class="paint-card"><div class="paint-swatch"><div class="paint-swatch-inner" style="background:${p.color||'#CCC'}"></div><div class="swatch-actions"><button class="swatch-btn" onclick="openPaintModal('${roomId}','${esc(surface)}','${p.id}')">✎</button><button class="swatch-btn" onclick="confirmDeletePaint('${roomId}','${esc(surface)}','${p.id}')">✕</button></div></div><div class="paint-info"><div class="paint-colour-name">${p.colour}</div><div class="paint-brand">${p.brand}</div>${p.type?`<span class="paint-type">${p.type}</span>`:''}${p.notes?`<div class="paint-notes">${p.notes}</div>`:''}</div><div class="paint-links">${cLink}${bLink}</div></div>`;
+}
+
+// ═══════════════════════════════════════════
+// ROOM MODAL
+// ═══════════════════════════════════════════
+function openRoomModal(id){
+  editingRoomId=id||null;
+  const room=id?data.rooms.find(r=>r.id===id):null;
+  document.getElementById('roomModalTitle').textContent=room?'Edit Room':'New Room';
+  document.getElementById('roomNameInput').value=room?room.name:'';
+  tempSurfaces=room?Object.keys(room.surfaces||[]):[];
+  renderSurfaceTags();
+  document.getElementById('roomModal').classList.add('open');
+  setTimeout(()=>document.getElementById('roomNameInput').focus(),100);
+}
+function renderSurfaceTags(){document.getElementById('surfaceTagList').innerHTML=tempSurfaces.map((s,i)=>`<span class="tag">${s}<button class="tag-del" onclick="removeSurfaceTag(${i})">✕</button></span>`).join('');}
+function addSurfaceTag(){const inp=document.getElementById('surfaceTagInput');const val=inp.value.trim();if(val&&!tempSurfaces.includes(val)){tempSurfaces.push(val);renderSurfaceTags();}inp.value='';inp.focus();}
+function removeSurfaceTag(i){tempSurfaces.splice(i,1);renderSurfaceTags();}
+function surfaceTagKeydown(e){if(e.key==='Enter'){e.preventDefault();addSurfaceTag();}}
+async function saveRoom(){
+  const name=document.getElementById('roomNameInput').value.trim();
+  if(!name){document.getElementById('roomNameInput').focus();return;}
+  if(editingRoomId){
+    const room=data.rooms.find(r=>r.id===editingRoomId);
+    room.name=name;data.rooms.sort((a,b)=>a.name.localeCompare(b.name));const ns={};tempSurfaces.forEach(s=>{ns[s]=room.surfaces[s]||[];});room.surfaces=ns;
+  }else{
+    const surfaces={};tempSurfaces.forEach(s=>{surfaces[s]=[];});
+    const newRoom={id:uid(),name,surfaces};data.rooms.push(newRoom);data.rooms.sort((a,b)=>a.name.localeCompare(b.name));selectedRoomId=newRoom.id;
+  }
+  await save();closeModal('roomModal');renderSidebar();renderRoom();
+  if(isMobile())showTab('detail');
+}
+
+// ═══════════════════════════════════════════
+// PAINT MODAL
+// ═══════════════════════════════════════════
+function openPaintModal(roomId,surface,paintId){
+  paintContext={roomId,surface};editingPaintId=paintId||null;
+  const room=data.rooms.find(r=>r.id===roomId);
+  const paint=paintId?(room.surfaces[surface]||[]).find(p=>p.id===paintId):null;
+  document.getElementById('paintModalTitle').textContent=paint?`Edit — ${surface}`:`Add Paint — ${surface}`;
+  const brandSel=document.getElementById('paintBrand');
+  const knownBrands=Array.from(brandSel.options).map(o=>o.value);
+  if(paint){
+    if(knownBrands.includes(paint.brand)){brandSel.value=paint.brand;document.getElementById('brandOtherField').style.display='none';}
+    else{brandSel.value='other';document.getElementById('brandOtherField').style.display='block';document.getElementById('paintBrandOther').value=paint.brand;}
+  }else{brandSel.value='';document.getElementById('brandOtherField').style.display='none';}
+  document.getElementById('paintColour').value=paint?.colour||'';
+  populateTypeOptions(paint?.brand || getBrand(), paint?.type || '');
+  document.getElementById('paintColourUrl').value=paint?.colourUrl||'';
+  document.getElementById('paintBuyUrl').value=paint?.buyUrl||'';
+  document.getElementById('paintNotes').value=paint?.notes||'';
+  const color=paint?.color||'#F5F0E8';
+  document.getElementById('paintColorPicker').value=color;
+  document.getElementById('paintColorHex').value=color;
+  document.getElementById('colorPreview').style.background=color;
+  setLookupStatus('','');hideSuggestions();
+  document.getElementById('paintModal').classList.add('open');
+  setTimeout(()=>document.getElementById('paintBrand').focus(),100);
+}
+function updateColorPreview(val){document.getElementById('colorPreview').style.background=val;document.getElementById('paintColorHex').value=val;}
+function syncColorHex(val){if(/^#[0-9a-fA-F]{6}$/.test(val)){document.getElementById('paintColorPicker').value=val;document.getElementById('colorPreview').style.background=val;}}
+async function savePaint(){
+  const brand=getBrand();const colour=document.getElementById('paintColour').value.trim();
+  if(!brand){document.getElementById('paintBrand').focus();return;}
+  if(!colour){document.getElementById('paintColour').focus();return;}
+  const paint={id:editingPaintId||uid(),brand,colour,type:getType(),color:document.getElementById('paintColorPicker').value,colourUrl:document.getElementById('paintColourUrl').value.trim(),buyUrl:document.getElementById('paintBuyUrl').value.trim(),notes:document.getElementById('paintNotes').value.trim()};
+  const room=data.rooms.find(r=>r.id===paintContext.roomId);
+  if(!room.surfaces[paintContext.surface])room.surfaces[paintContext.surface]=[];
+  if(editingPaintId){const idx=room.surfaces[paintContext.surface].findIndex(p=>p.id===editingPaintId);if(idx>-1)room.surfaces[paintContext.surface][idx]=paint;}
+  else{room.surfaces[paintContext.surface].push(paint);}
+  await save();closeModal('paintModal');renderSidebar();renderRoom();
+}
+
+// ═══════════════════════════════════════════
+// DELETE
+// ═══════════════════════════════════════════
+function confirmDeleteRoom(id){const room=data.rooms.find(r=>r.id===id);document.getElementById('confirmText').textContent=`Delete "${room.name}" and all its paint records? This cannot be undone.`;document.getElementById('confirmBtn').onclick=()=>deleteRoom(id);document.getElementById('confirmModal').classList.add('open');}
+async function deleteRoom(id){data.rooms=data.rooms.filter(r=>r.id!==id);if(selectedRoomId===id){selectedRoomId=null;if(isMobile())showTab('rooms');}await save();closeModal('confirmModal');renderSidebar();renderRoom();}
+function confirmDeletePaint(roomId,surface,paintId){const room=data.rooms.find(r=>r.id===roomId);const paint=(room.surfaces[surface]||[]).find(p=>p.id===paintId);document.getElementById('confirmText').textContent=`Remove "${paint.colour}" by ${paint.brand} from ${surface}?`;document.getElementById('confirmBtn').onclick=()=>deletePaint(roomId,surface,paintId);document.getElementById('confirmModal').classList.add('open');}
+async function deletePaint(roomId,surface,paintId){const room=data.rooms.find(r=>r.id===roomId);room.surfaces[surface]=(room.surfaces[surface]||[]).filter(p=>p.id!==paintId);await save();closeModal('confirmModal');renderSidebar();renderRoom();}
+
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+window.addEventListener('resize',initPanels);
+init();
+</script>
+</body>
+</html>
